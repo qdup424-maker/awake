@@ -614,7 +614,7 @@ scene.add(archDepth, arch);
 //  Ship  "BOREALIS"
 // =====================================================================
 const SHIP_L = 48, SHIP_B = 10.4;
-const shipZ = (t) => -54 + 4.3 * t;          // ship centre, sails along +z through the arch at z = 0
+const shipZ = (t) => -10 + 7.2 * t;          // ship centre: starts inside the arch (z = 0) and sails out along +z
 function hullBw(u) {
   let s = 1;
   if (u < 0.12) s = 0.84 + 0.16 * Math.sqrt(u / 0.12);
@@ -872,14 +872,14 @@ ship.add(pl1, pl2);
 // =====================================================================
 const WH = {
   L: 14, R: 30, apexY: 0.6,
-  C: new THREE.Vector3(14.5, 0.6 - 30, 59),
-  D: new THREE.Vector3(0, 0, -1),
-  t0: 13.45, b0: -0.32, om: 0.215,
+  C: new THREE.Vector3(60, 0.6 - 30, 66),
+  D: new THREE.Vector3(0, 0, 1),
+  t0: 9.75, b0: -0.32, om: 0.215,
   piv: 1.2,
 };
 const whaleBeta = (t) => WH.b0 + (t - WH.t0) * WH.om;
-const whaleCurl = (t) => 1.75 * smooth(15.9, 17.7, t);
-const whaleVisible = (t) => t > 12.6 && t < 20.5;
+const whaleCurl = (t) => 1.75 * smooth(12.2, 14.0, t);
+const whaleVisible = (t) => t > 8.9 && t < 16.8;
 function whaleR(x) {
   const L = WH.L, xm = 0.58 * L, Rm = 1.45;
   if (x < -0.4) return 0.0;
@@ -1196,14 +1196,14 @@ const spray = (() => {
   const add = (birth, life, p0, v0, size, drag, grav, kind) => list.push({ birth, life, p0, v0, size, drag, grav, kind });
   // blow: column of mist
   for (let i = 0; i < 520; i++) {
-    const tb = 14.85 + rng() * 0.55;
+    const tb = 11.15 + rng() * 0.55;
     const p0 = whalePoint(WH.L - 2.8, 1.0, (rng() - 0.5) * 0.3, tb);
     const a = rng() * Math.PI * 2, sp = Math.pow(rng(), 1.2) * 2.6;
     add(tb, 1.6 + rng() * 1.2, p0, new THREE.Vector3(Math.cos(a) * sp, 7 + rng() * 4, Math.sin(a) * sp), 0.5 + rng() * 0.6, 1.25, -1.6, 0);
   }
   // head breaking the surface
   for (let i = 0; i < 260; i++) {
-    const tb = 13.85 + rng() * 0.7;
+    const tb = 10.15 + rng() * 0.7;
     const s = rng() < 0.5 ? -1 : 1;
     const p0 = whalePoint(WH.L - 1.5 - rng() * 3, 0.2, s * (0.8 + rng() * 0.6), tb); p0.y = Math.max(p0.y, 0.1);
     const out = WS.clone().multiplyScalar(s * (1.5 + rng() * 2.5));
@@ -1211,7 +1211,7 @@ const spray = (() => {
   }
   // water pouring off the rising flukes
   for (let i = 0; i < 520; i++) {
-    const tb = 16.5 + rng() * 2.0;
+    const tb = 12.8 + rng() * 2.0;
     const zz = (rng() - 0.5) * 5.0;
     const bx = -0.6 - rng() * 0.7 * (1 - Math.abs(zz) / 2.6);
     const p0 = whalePoint(bx, 0, zz, tb);
@@ -1279,6 +1279,51 @@ const spray = (() => {
 })();
 
 // =====================================================================
+//  Camera: one continuous move (no cuts), phases blended with smooth weights
+//   A  0-20%   establishing: low, ~8x ship length away, looking through the arch
+//   B 20-40%   down to ship height, ~2.5x away, tracking alongside at ship speed
+//   C 40-65%   orbit round to the rear 45 deg quarter, ~2x away; the whale passes in the foreground
+//   D 65-100%  pull back and rise, flying back through the arch, ending >10x away on a wide shot
+// =====================================================================
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const easeOut = (u) => 1 - Math.pow(1 - clamp(u, 0, 1), 2);
+const easeIn = (u) => Math.pow(clamp(u, 0, 1), 2);
+const shipC = (t) => V3(0, 7, shipZ(t));
+const D_PATH = new THREE.CatmullRomCurve3([V3(70.7, 12, 36.3), V3(34, 18, 20), V3(7, 26, 0), V3(1, 62, -110), V3(-4, 118, -330)], false, 'centripetal');
+function phaseA(t) {
+  const u = glide(t / 8);
+  return { p: V3(lerp(10, 70, u), lerp(16, 11, u), lerp(372, 150, u)), l: shipC(t).add(V3(0, 3, 0)), fov: 32 };
+}
+function phaseB(t) {
+  const u = clamp((t - 5) / 5, 0, 1);
+  return { p: V3(lerp(124, 116, u), lerp(9, 8.5, u), shipZ(t) + lerp(10, 2, u)), l: shipC(t).add(V3(0, 3, 3)), fov: 38 };
+}
+function phaseC(t) {
+  const u = glide((t - 10) / 6.25);
+  const phi = THREE.MathUtils.degToRad(lerp(90, 135, u)), d = lerp(116, 100, u);
+  const c = shipC(t);
+  return { p: V3(c.x + d * Math.sin(phi), lerp(4.0, 6.0, u), c.z + d * Math.cos(phi)), l: c.clone().add(V3(0, -1, 0)), fov: 38, tilt: -1 };
+}
+function phaseD(t) {
+  const u = easeOut(glide((t - 16.25) / 8.75) * 0.65 + clamp((t - 16.25) / 8.75, 0, 1) * 0.35);
+  const p = D_PATH.getPointAt(clamp(u, 0, 1));
+  const l = shipC(t).add(V3(0, lerp(3, 10, u), 0));
+  return { p, l, fov: lerp(38, 46, u) };
+}
+const mixShot = (a, b, w) => ({ p: a.p.clone().lerp(b.p, w), l: a.l.clone().lerp(b.l, w), fov: lerp(a.fov, b.fov, w), tilt: lerp(a.tilt ?? 4.5, b.tilt ?? 4.5, w) });
+function cameraAt(t) {
+  let r = phaseA(t);
+  r = mixShot(r, phaseB(t), smooth(4.0, 9.2, t));
+  r = mixShot(r, phaseC(t), smooth(8.8, 11.2, t));
+  r = mixShot(r, phaseD(t), smooth(15.2, 17.3, t));
+  // tiny deterministic "operator" drift
+  r.p.x += 0.10 * Math.sin(t * 0.9 + 1.0); r.p.y += 0.06 * Math.sin(t * 1.3);
+  return r;
+}
+const CAM_PATH = [];
+for (let t = 0; t <= LOOP; t += 0.1) CAM_PATH.push(cameraAt(t).p);
+
+// =====================================================================
 //  Ice floes (instanced, bobbing on the waves)
 // =====================================================================
 const floeMat = makeIceMaterial({ transparent: false, glow: 0.8 });
@@ -1333,8 +1378,9 @@ const floeSets = [];
   }
   // keep-out zones: ship corridor, whale path, camera positions, arch feet
   const keepOut = (x, z, r) => {
-    if (Math.abs(x) < 15 + r && z > -170 && z < 140) return true;            // ship corridor + wake
-    if (x > 4 - r && x < 34 + r && z > 30 - r && z < 100 + r) return true;    // whale + its close-up camera
+    if (Math.abs(x) < 15 + r && z > -200 && z < 260) return true;            // ship corridor + wake
+    for (const c of CAM_PATH) if (c.y < 30 && Math.hypot(x - c.x, z - c.z) < 16 + r) return true;   // camera flight path
+    if (x > 42 - r && x < 80 + r && z > 34 - r && z < 96 + r) return true;    // whale    // whale + its close-up camera
     const blobs = [[-60, 0, 30], [61, 3, 30], [-86, 12, 26], [88, -10, 26], [-55, -180, 24], [-30, 85, 16], [-55, 150, 14], [48, -116, 14], [43, -100, 14], [39, -84, 14]];
     for (const [bx, bz, br] of blobs) if (Math.hypot(x - bx, z - bz) < br + r) return true;
     return false;
@@ -1511,26 +1557,6 @@ composer.addPass(grade);
 // =====================================================================
 //  Camera timeline (fixed, deterministic)
 // =====================================================================
-const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
-const SHOTS = [
-  // 1. establishing: wide, ship approaching the arch
-  { t0: 0, t1: 6, f: (k, t) => ({ p: V3(lerp(-70, -46, k), lerp(24, 13, k), lerp(-238, -188, k)), l: V3(lerp(6, 2, k), lerp(40, 31, k), lerp(0, -6, k)), fov: lerp(46, 43, k) }) },
-  // 2. side tracking shot, passing under the arch
-  { t0: 6, t1: 13, f: (k, t) => { const z = shipZ(t); return { p: V3(lerp(48, 39, k), lerp(7.5, 9.5, k), lerp(-116, -84, k)), l: V3(0, lerp(20, 31, k), z + 3), fov: 52 }; } },
-  // 3. close on the whale (from behind it, ship running alongside on the left; fluke-up shows the white underside)
-  { t0: 13, t1: 19, f: (k, t) => { const wz = lerp(67, 49.5, smooth(13.4, 18.6, t)); return { p: V3(lerp(17, 15.5, k), lerp(2.4, 2.7, k), lerp(88, 70, k)), l: V3(lerp(10.5, 13, k), lerp(1.4, 3.0, smooth(16.5, 18.6, t)), wz), fov: lerp(44, 36, k) }; } },
-  // 4. from the far side of the arch, pulling back
-  { t0: 19, t1: 25, f: (k, t) => ({ p: V3(lerp(-24, -92, k), lerp(7, 46, k), lerp(84, 250, k)), l: V3(lerp(0, 0, k), lerp(8, 24, k), lerp(36, 0, k)), fov: lerp(42, 44, k) }) },
-];
-function cameraAt(t) {
-  const s = SHOTS.find(S => t >= S.t0 && t < S.t1) || SHOTS[SHOTS.length - 1];
-  const k = glide((t - s.t0) / (s.t1 - s.t0));
-  const r = s.f(k, t);
-  // tiny deterministic "operator" drift
-  r.p.x += 0.12 * Math.sin(t * 0.9 + 1.0); r.p.y += 0.08 * Math.sin(t * 1.3);
-  return r;
-}
-
 // =====================================================================
 //  Frame update
 // =====================================================================
@@ -1562,7 +1588,7 @@ function update(t) {
   const c = cameraAt(t);
   camera.position.copy(c.p);
   camera.lookAt(c.l);
-  if (ASPECT > 1.2) camera.rotateX(THREE.MathUtils.degToRad(4.5));   // widescreen: horizon a little lower, more aurora
+  if (ASPECT > 1.2) camera.rotateX(THREE.MathUtils.degToRad(c.tilt ?? 4.5));   // widescreen: horizon a little lower, more aurora
   // widescreen: keep framing close to the square cut (horizontal view ~1.45x wider, not 2.39x)
   const fv = ASPECT > 1 ? 2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(c.fov) / 2) * 1.45 / ASPECT)) : c.fov;
   if (camera.fov !== fv) { camera.fov = fv; camera.updateProjectionMatrix(); }
